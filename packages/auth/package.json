@@ -1,0 +1,27 @@
+{
+  "name": "@repo/auth",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./config": "./src/config.ts",
+    "./auth": "./src/auth.ts"
+  },
+  "scripts": {
+    "lint": "eslint . --max-warnings 0"
+  },
+  "dependencies": {
+    "next-auth": "5.0.0-beta.25",
+    "@auth/core": "^0.37.2"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "eslint": "^8.48.0",
+    "eslint-config-next": "14.2.18",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "next": "^14.0.0",
+    "react": "^18.2.0"
+  }
+}
