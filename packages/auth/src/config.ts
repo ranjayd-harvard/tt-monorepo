@@ -1,14 +1,14 @@
-import type { NextAuthConfig } from "next-auth"
-import Google from "next-auth/providers/google"
-import GitHub from "next-auth/providers/github"
+// packages/auth/src/config.ts
+import type { NextAuthOptions } from "next-auth"
+import GoogleProvider from "next-auth/providers/google"
+import GitHubProvider from "next-auth/providers/github"
 
-export const authConfig = {
-  secret: process.env.NEXTAUTH_SECRET || "development-secret-key-that-is-at-least-32-characters-long",
+export const authOptions: NextAuthOptions = {
+  secret: process.env.NEXTAUTH_SECRET,
   providers: [
-    Google({
-      clientId: process.env.GOOGLE_CLIENT_ID || "dummy-client-id",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "dummy-secret",
-      allowDangerousEmailAccountLinking: true,
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: {
         params: {
           prompt: "consent",
@@ -17,9 +17,9 @@ export const authConfig = {
         }
       }
     }),
-    GitHub({
-      clientId: process.env.GITHUB_ID || "dummy-github-id",
-      clientSecret: process.env.GITHUB_SECRET || "dummy-github-secret",
+    GitHubProvider({
+      clientId: process.env.GITHUB_ID!,
+      clientSecret: process.env.GITHUB_SECRET!,
     }),
   ],
   callbacks: {
@@ -32,11 +32,5 @@ export const authConfig = {
     async session({ session, token }) {
       return session
     },
-  },
-  // Remove custom pages to use NextAuth defaults
-  // pages: {
-  //   signIn: "/api/auth/signin",
-  //   error: "/api/auth/error",
-  // },
-  trustHost: true,
-} satisfies NextAuthConfig
+  }
+}

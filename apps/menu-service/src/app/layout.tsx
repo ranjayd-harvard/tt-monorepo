@@ -1,8 +1,14 @@
+// apps/rest-service/src/app/layout.tsx (and same for menu-service, blog-service)
 import './globals.css'
 import { Inter } from 'next/font/google'
-import { SessionProvider } from 'next-auth/react'
+import { AuthSessionProvider } from '@repo/auth'
 
 const inter = Inter({ subsets: ['latin'] })
+
+export const metadata = {
+  title: 'Menu Service',
+  description: 'Menu microservice',
+}
 
 export default function RootLayout({
   children,
@@ -12,9 +18,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <SessionProvider>
+        <AuthSessionProvider>
           {children}
-        </SessionProvider>
+        </AuthSessionProvider>
       </body>
     </html>
   )

@@ -3,8 +3,8 @@
     "version": "0.0.0",
     "private": true,
     "exports": {
-      "./tailwind": "./tailwind.config.js",
-      "./eslint": "./eslint.config.js",
-      "./typescript": "./tsconfig.json"
+        "./tailwind": "./tailwind.config.js",
+        "./eslint": "./eslint.config.js",
+        "./typescript": "./tsconfig.json"
     }
-  }
+}

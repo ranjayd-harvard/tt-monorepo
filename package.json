@@ -5,13 +5,14 @@
     "build": "turbo build",
     "dev": "turbo dev",
     "dev:rest": "turbo dev --filter=@repo/rest-service",
-    "dev:menu": "turbo dev --filter=@repo/menu-service", 
+    "dev:menu": "turbo dev --filter=@repo/menu-service",
     "dev:blog": "turbo dev --filter=@repo/blog-service",
     "lint": "turbo lint",
     "clean": "turbo clean"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.11",
+    "@types/node": "^24.0.13",
     "autoprefixer": "^10.4.21",
     "postcss": "^8.5.6",
     "prettier": "^3.6.0",
