@@ -1,6 +1,3 @@
-// Updated: packages/ui/src/components/layout/modern-header.tsx
-// Moving ServiceSwitcher to right side next to user section
-
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -27,6 +24,8 @@ import { ServiceSwitcher } from '../navigation/service-switcher'
 
 interface ModernHeaderProps {
   currentService?: string
+  theme?: 'light' | 'dark' | 'gradient' | 'glass'
+  backgroundColor?: string
 }
 
 // Custom Avatar Component (same as before)
@@ -88,9 +87,14 @@ function InlineAvatar({
   )
 }
 
-export function ModernHeader({ currentService }: ModernHeaderProps) {
+export function ModernHeader({ 
+  currentService, 
+  theme = 'gradient',
+  backgroundColor 
+}: ModernHeaderProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isLargeScreen, setIsLargeScreen] = useState(true)
+  const [scrolled, setScrolled] = useState(false)
   const { data: session, status } = useSession()
 
   // Handle screen size changes
@@ -106,6 +110,61 @@ export function ModernHeader({ currentService }: ModernHeaderProps) {
     window.addEventListener('resize', checkScreenSize)
     return () => window.removeEventListener('resize', checkScreenSize)
   }, [])
+
+  // Handle scroll effect for glass theme
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 20)
+    }
+    
+    if (theme === 'glass') {
+      window.addEventListener('scroll', handleScroll)
+      return () => window.removeEventListener('scroll', handleScroll)
+    }
+  }, [theme])
+
+  // Get header background based on theme
+  const getHeaderBackground = () => {
+    if (backgroundColor) return backgroundColor
+
+    switch (theme) {
+      case 'light':
+        return 'rgba(248, 250, 252, 0.95)'
+      case 'dark':
+        return 'rgba(15, 23, 42, 0.95)'
+      case 'gradient':
+        return 'linear-gradient(135deg, rgba(99, 102, 241, 0.95) 0%, rgba(139, 92, 246, 0.95) 100%)'
+      case 'glass':
+        return scrolled 
+          ? 'rgba(255, 255, 255, 0.8)' 
+          : 'rgba(255, 255, 255, 0.5)'
+      default:
+        return 'rgba(255, 255, 255, 0.95)'
+    }
+  }
+
+  // Get text color based on theme
+  const getTextColor = () => {
+    switch (theme) {
+      case 'dark':
+      case 'gradient':
+        return 'white'
+      default:
+        return '#111827'
+    }
+  }
+
+  // Get border color based on theme
+  const getBorderColor = () => {
+    switch (theme) {
+      case 'dark':
+        return 'rgba(255, 255, 255, 0.1)'
+      case 'gradient':
+        return 'rgba(255, 255, 255, 0.2)'
+      default:
+        return 'rgba(0, 0, 0, 0.1)'
+    }
+  }
 
   const services = [
     { 
@@ -138,103 +197,148 @@ export function ModernHeader({ currentService }: ModernHeaderProps) {
     service.name.toLowerCase().includes(currentService?.toLowerCase() || '')
   )
 
+  const textColor = getTextColor()
+  const isDarkTheme = theme === 'dark' || theme === 'gradient'
+
   return (
-    <div>
-      <header 
+    <>
+      {/* FIXED HEADER CONTAINER - Prevents layout shifts */}
+      <div
         style={{
           position: 'fixed',
           top: '0',
           left: '0',
           right: '0',
+          height: '80px',
           zIndex: '50',
-          backgroundColor: 'rgba(255, 255, 255, 0.95)',
-          backdropFilter: 'blur(20px)',
-          borderBottom: '1px solid rgba(0, 0, 0, 0.1)',
-          boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)'
+          background: getHeaderBackground(),
+          backdropFilter: theme === 'glass' ? 'blur(20px)' : 'none',
+          borderBottom: `1px solid ${getBorderColor()}`,
+          boxShadow: theme === 'gradient' 
+            ? '0 4px 20px rgba(99, 102, 241, 0.3)' 
+            : '0 1px 3px rgba(0, 0, 0, 0.1)',
+          transition: 'all 0.3s ease',
+          // CRITICAL: Prevent any size changes
+          minHeight: '80px',
+          maxHeight: '80px',
+          overflow: 'visible'
         }}
       >
+        {/* INNER CONTAINER - Fixed width, no flex changes */}
         <div 
           style={{
             maxWidth: '1200px',
+            width: '100%',
+            height: '100%',
             margin: '0 auto',
-            padding: '0 24px'
+            padding: '0 24px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            // CRITICAL: Prevent flex item changes
+            flexShrink: 0
           }}
         >
+          {/* Logo Section - FIXED WIDTH */}
           <div 
-            style={{
-              display: 'flex',
-              height: '80px',
-              alignItems: 'center',
-              justifyContent: 'space-between'
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '12px',
+              // CRITICAL: Fixed width prevents logo movement
+              minWidth: '280px',
+              flexShrink: 0
             }}
           >
-            {/* Logo Section - Left Side */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <Link 
-                href="/" 
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '12px',
-                  textDecoration: 'none'
+            <Link 
+              href="/" 
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '12px',
+                textDecoration: 'none'
+              }}
+            >
+              <div 
+                style={{
+                  background: isDarkTheme 
+                    ? 'rgba(255, 255, 255, 0.2)' 
+                    : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                  padding: '8px',
+                  borderRadius: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '40px',
+                  height: '40px',
+                  flexShrink: 0
                 }}
               >
-                <div 
-                  style={{
-                    background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-                    padding: '8px',
-                    borderRadius: '12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}
-                >
-                  <Zap style={{ width: '24px', height: '24px', color: 'white' }} />
-                </div>
-                <div>
-                  <h1 style={{ 
-                    margin: '0',
-                    fontSize: '20px', 
-                    fontWeight: 'bold',
-                    background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text'
-                  }}>
-                    Microservices Platform
-                  </h1>
-                  <p style={{ 
-                    margin: '0',
-                    fontSize: '12px', 
-                    color: '#6b7280'
-                  }}>
-                    {currentServiceInfo?.description || 'Modern Architecture'}
-                  </p>
-                </div>
-              </Link>
-            </div>
+                <Zap style={{ 
+                  width: '24px', 
+                  height: '24px', 
+                  color: 'white'
+                }} />
+              </div>
+              <div style={{ flexShrink: 0 }}>
+                <h1 style={{ 
+                  margin: '0',
+                  fontSize: '20px', 
+                  fontWeight: 'bold',
+                  color: textColor,
+                  whiteSpace: 'nowrap'
+                }}>
+                  Microservices Platform
+                </h1>
+                <p style={{ 
+                  margin: '0',
+                  fontSize: '12px', 
+                  color: isDarkTheme ? 'rgba(255, 255, 255, 0.7)' : '#6b7280',
+                  whiteSpace: 'nowrap'
+                }}>
+                  {currentServiceInfo?.description || 'Modern Architecture'}
+                </p>
+              </div>
+            </Link>
+          </div>
 
-            {/* Right Side - Service Switcher + User Section */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              
-              {/* Service Switcher - Desktop */}
-              {isLargeScreen && (
+          {/* Right Side - FIXED WIDTH CONTAINER */}
+          <div 
+            style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '16px',
+              // CRITICAL: Fixed width prevents shifts
+              minWidth: '400px',
+              justifyContent: 'flex-end',
+              flexShrink: 0
+            }}
+          >
+            
+            {/* Service Switcher - Desktop - ISOLATED POSITIONING */}
+            {isLargeScreen && (
+              <div style={{ position: 'relative', flexShrink: 0 }}>
                 <ServiceSwitcher 
                   currentService={currentService}
                   services={services}
                   showStatus={true}
                 />
-              )}
+              </div>
+            )}
 
-              {/* User Section */}
+            {/* User Section - ISOLATED POSITIONING */}
+            <div style={{ position: 'relative', flexShrink: 0 }}>
               {status === 'loading' ? (
                 <div 
                   style={{
                     width: '40px',
                     height: '40px',
-                    background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                    background: isDarkTheme 
+                      ? 'rgba(255, 255, 255, 0.2)'
+                      : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
                     borderRadius: '12px',
-                    opacity: '0.6'
+                    opacity: '0.6',
+                    flexShrink: 0
                   }}
                 />
               ) : session ? (
@@ -250,10 +354,16 @@ export function ModernHeader({ currentService }: ModernHeaderProps) {
                         border: 'none',
                         background: 'transparent',
                         cursor: 'pointer',
-                        transition: 'all 0.2s ease'
+                        transition: 'all 0.2s ease',
+                        // CRITICAL: Fixed dimensions
+                        minWidth: isLargeScreen ? '120px' : '40px',
+                        height: '48px',
+                        flexShrink: 0
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.05)'
+                        e.currentTarget.style.backgroundColor = isDarkTheme 
+                          ? 'rgba(255, 255, 255, 0.1)' 
+                          : 'rgba(0, 0, 0, 0.05)'
                       }}
                       onMouseLeave={(e) => {
                         e.currentTarget.style.backgroundColor = 'transparent'
@@ -266,25 +376,35 @@ export function ModernHeader({ currentService }: ModernHeaderProps) {
                         size={32}
                       />
                       {isLargeScreen && (
-                        <div style={{ textAlign: 'left' }}>
+                        <div style={{ textAlign: 'left', flexShrink: 0 }}>
                           <p style={{ 
                             margin: '0', 
                             fontSize: '14px', 
                             fontWeight: '500',
-                            color: '#111827'
+                            color: textColor,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            maxWidth: '80px'
                           }}>
                             {session.user?.name}
                           </p>
                           <p style={{ 
                             margin: '0', 
                             fontSize: '12px', 
-                            color: '#6b7280' 
+                            color: isDarkTheme ? 'rgba(255, 255, 255, 0.7)' : '#6b7280',
+                            whiteSpace: 'nowrap'
                           }}>
                             Online
                           </p>
                         </div>
                       )}
-                      <ChevronDown style={{ width: '16px', height: '16px', color: '#6b7280' }} />
+                      <ChevronDown style={{ 
+                        width: '16px', 
+                        height: '16px', 
+                        color: isDarkTheme ? 'rgba(255, 255, 255, 0.7)' : '#6b7280',
+                        flexShrink: 0
+                      }} />
                     </button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent 
@@ -296,6 +416,7 @@ export function ModernHeader({ currentService }: ModernHeaderProps) {
                       borderRadius: '12px'
                     }}
                     align="end"
+                    sideOffset={8}
                   >
                     <DropdownMenuLabel style={{ padding: '16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -352,19 +473,28 @@ export function ModernHeader({ currentService }: ModernHeaderProps) {
                 <button
                   onClick={() => signIn()}
                   style={{
-                    background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                    background: isDarkTheme 
+                      ? 'rgba(255, 255, 255, 0.2)' 
+                      : 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
                     color: 'white',
-                    border: 'none',
+                    border: isDarkTheme ? '1px solid rgba(255, 255, 255, 0.3)' : 'none',
                     padding: '12px 24px',
                     borderRadius: '12px',
                     fontSize: '14px',
                     fontWeight: '500',
                     cursor: 'pointer',
-                    transition: 'all 0.2s ease'
+                    transition: 'all 0.2s ease',
+                    // CRITICAL: Fixed dimensions
+                    minWidth: '100px',
+                    height: '48px',
+                    flexShrink: 0,
+                    whiteSpace: 'nowrap'
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.transform = 'translateY(-1px)'
-                    e.currentTarget.style.boxShadow = '0 8px 16px rgba(99, 102, 241, 0.3)'
+                    e.currentTarget.style.boxShadow = isDarkTheme
+                      ? '0 8px 16px rgba(255, 255, 255, 0.2)'
+                      : '0 8px 16px rgba(99, 102, 241, 0.3)'
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.transform = 'translateY(0)'
@@ -374,116 +504,134 @@ export function ModernHeader({ currentService }: ModernHeaderProps) {
                   Sign In
                 </button>
               )}
+            </div>
 
-              {/* Mobile Section - Service Switcher + Menu Button */}
-              {!isLargeScreen && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {/* Mobile Section - FIXED WIDTH */}
+            {!isLargeScreen && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                <div style={{ position: 'relative' }}>
                   <ServiceSwitcher 
                     currentService={currentService}
                     services={services}
                     compact={true}
                     showStatus={false}
                   />
-                  <button
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: '40px',
-                      height: '40px',
-                      border: 'none',
-                      background: 'transparent',
-                      borderRadius: '12px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease'
-                    }}
-                    onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.05)'
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'transparent'
-                    }}
-                  >
-                    {isMobileMenuOpen ? 
-                      <X style={{ width: '24px', height: '24px' }} /> : 
-                      <Menu style={{ width: '24px', height: '24px' }} />
-                    }
-                  </button>
                 </div>
-              )}
-            </div>
+                <button
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '40px',
+                    height: '40px',
+                    border: 'none',
+                    background: 'transparent',
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    flexShrink: 0
+                  }}
+                  onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = isDarkTheme 
+                      ? 'rgba(255, 255, 255, 0.1)' 
+                      : 'rgba(0, 0, 0, 0.05)'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent'
+                  }}
+                >
+                  {isMobileMenuOpen ? 
+                    <X style={{ width: '24px', height: '24px', color: textColor }} /> : 
+                    <Menu style={{ width: '24px', height: '24px', color: textColor }} />
+                  }
+                </button>
+              </div>
+            )}
           </div>
-
-          {/* Mobile Menu - Only when needed */}
-          {!isLargeScreen && isMobileMenuOpen && (
-            <div 
-              style={{
-                padding: '16px',
-                borderTop: '1px solid rgba(0, 0, 0, 0.1)',
-                background: 'rgba(255, 255, 255, 0.95)',
-                backdropFilter: 'blur(20px)'
-              }}
-            >
-              <div style={{ 
-                fontSize: '12px', 
-                color: '#6b7280', 
-                marginBottom: '12px',
-                textTransform: 'uppercase',
-                fontWeight: '600',
-                letterSpacing: '0.05em'
-              }}>
-                Quick Actions
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <button
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '12px 16px',
-                    borderRadius: '12px',
-                    border: 'none',
-                    background: 'rgba(99, 102, 241, 0.1)',
-                    color: '#6366f1',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    cursor: 'pointer',
-                    width: '100%',
-                    textAlign: 'left'
-                  }}
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  <Settings style={{ width: '16px', height: '16px' }} />
-                  <span>Settings</span>
-                </button>
-                <button
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '12px 16px',
-                    borderRadius: '12px',
-                    border: 'none',
-                    background: 'rgba(99, 102, 241, 0.1)',
-                    color: '#6366f1',
-                    fontSize: '14px',
-                    fontWeight: '500',
-                    cursor: 'pointer',
-                    width: '100%',
-                    textAlign: 'left'
-                  }}
-                  onClick={() => setIsMobileMenuOpen(false)}
-                >
-                  <User style={{ width: '16px', height: '16px' }} />
-                  <span>Profile</span>
-                </button>
-              </div>
-            </div>
-          )}
         </div>
-      </header>
-      <div style={{ height: '80px' }} />
-    </div>
+      </div>
+
+      {/* CONTENT SPACER - Prevents content from hiding behind fixed header */}
+      <div style={{ height: '80px', flexShrink: 0 }} />
+
+      {/* MOBILE MENU - OUTSIDE HEADER CONTAINER */}
+      {!isLargeScreen && isMobileMenuOpen && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: '80px',
+            left: '0',
+            right: '0',
+            zIndex: '40',
+            padding: '16px',
+            background: getHeaderBackground(),
+            backdropFilter: 'blur(20px)',
+            borderBottom: `1px solid ${getBorderColor()}`,
+            boxShadow: '0 4px 8px rgba(0, 0, 0, 0.1)'
+          }}
+        >
+          <div style={{ 
+            fontSize: '12px', 
+            color: isDarkTheme ? 'rgba(255, 255, 255, 0.7)' : '#6b7280',
+            marginBottom: '12px',
+            textTransform: 'uppercase',
+            fontWeight: '600',
+            letterSpacing: '0.05em'
+          }}>
+            Quick Actions
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <button
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '12px 16px',
+                borderRadius: '12px',
+                border: 'none',
+                background: isDarkTheme 
+                  ? 'rgba(255, 255, 255, 0.1)' 
+                  : 'rgba(99, 102, 241, 0.1)',
+                color: isDarkTheme ? 'white' : '#6366f1',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                width: '100%',
+                textAlign: 'left'
+              }}
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              <Settings style={{ width: '16px', height: '16px' }} />
+              <span>Settings</span>
+            </button>
+            <button
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                padding: '12px 16px',
+                borderRadius: '12px',
+                border: 'none',
+                background: isDarkTheme 
+                  ? 'rgba(255, 255, 255, 0.1)' 
+                  : 'rgba(99, 102, 241, 0.1)',
+                color: isDarkTheme ? 'white' : '#6366f1',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                width: '100%',
+                textAlign: 'left'
+              }}
+              onClick={() => setIsMobileMenuOpen(false)}
+            >
+              <User style={{ width: '16px', height: '16px' }} />
+              <span>Profile</span>
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
+

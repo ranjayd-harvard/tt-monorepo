@@ -172,6 +172,8 @@ export function ServiceSwitcher({
         }}
         align="end"
         sideOffset={8}
+        avoidCollisions={true}
+        side="bottom"
       >
         <DropdownMenuLabel 
           style={{ 

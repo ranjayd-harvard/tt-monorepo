@@ -20,7 +20,10 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <AuthSessionProvider>
-          <ModernAppLayout currentService="Blog Service">
+          <ModernAppLayout 
+            currentService="Blog Service"
+            headerTheme="glass"  // Modern glass effect header
+          >
             {children}
           </ModernAppLayout>
         </AuthSessionProvider>
@@ -28,3 +31,25 @@ export default function RootLayout({
     </html>
   )
 }
+
+
+
+// Example 4: Custom color theme
+/*
+<ModernAppLayout 
+  currentService="Custom Service"
+  headerBackgroundColor="linear-gradient(135deg, #10b981 0%, #059669 100%)"
+>
+  {children}
+</ModernAppLayout>
+*/
+
+// Example 5: Light theme
+/*
+<ModernAppLayout 
+  currentService="Light Service"
+  headerTheme="light"
+>
+  {children}
+</ModernAppLayout>
+*/

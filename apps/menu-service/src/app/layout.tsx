@@ -20,7 +20,10 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <AuthSessionProvider>
-          <ModernAppLayout currentService="Menu Service">
+          <ModernAppLayout 
+            currentService="Menu Service"
+            headerTheme="dark"  // Professional dark header
+          >
             {children}
           </ModernAppLayout>
         </AuthSessionProvider>

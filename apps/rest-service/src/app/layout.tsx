@@ -20,7 +20,10 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <AuthSessionProvider>
-          <ModernAppLayout currentService="Rest Service">
+          <ModernAppLayout 
+            currentService="Rest Service"
+            headerTheme="gradient"  // Beautiful gradient header
+          >
             {children}
           </ModernAppLayout>
         </AuthSessionProvider>
@@ -28,3 +31,4 @@ export default function RootLayout({
     </html>
   )
 }
+
