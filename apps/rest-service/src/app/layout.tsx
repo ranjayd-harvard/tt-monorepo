@@ -1,7 +1,7 @@
 // apps/rest-service/src/app/layout.tsx
 import './globals.css'
 import { Inter } from 'next/font/google'
-import { AuthSessionProvider } from '@repo/auth'
+import { AuthSessionProvider } from '@repo/auth/session-provider'
 import { ModernAppLayout } from '@repo/ui/components'
 
 const inter = Inter({ subsets: ['latin'] })

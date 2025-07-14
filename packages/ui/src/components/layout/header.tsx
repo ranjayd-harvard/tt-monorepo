@@ -4,7 +4,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { useSession, signIn, signOut } from '@repo/auth'
+import { useSession, signIn, signOut } from '@repo/auth/session-provider'
 import { Menu, X, User, LogOut, Settings, Home } from 'lucide-react'
 import { Button } from '../ui/button'
 import { 

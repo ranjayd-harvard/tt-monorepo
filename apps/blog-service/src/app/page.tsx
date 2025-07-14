@@ -1,42 +1,37 @@
 'use client'
 
+import { useSession, signIn, signOut } from '@repo/auth/session-provider'
 import { Button } from '@repo/ui/components'
-import { useSession, signIn, signOut } from '@repo/auth'
 
-export default function Home() {
-  const { data: session } = useSession()
+export default function HomePage() {
+  const { data: session, status } = useSession()
+
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+      </div>
+    )
+  }
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="max-w-2xl mx-auto text-center space-y-6">
-        <h1 className="text-4xl font-bold">Blog Service</h1>
-        <p className="text-lg text-muted-foreground">
-          Create and manage your blog content
-        </p>
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-white flex items-center justify-center p-4">
+      <div className="text-center space-y-6">
+        <h1 className="text-4xl font-bold text-gray-900">Blog Service</h1>
         
         {session ? (
           <div className="space-y-4">
-            <p className="text-muted-foreground">
-              Hello, {session.user?.name}! Start writing your blog.
-            </p>
-            <div className="space-y-4">
-              <div className="p-4 border rounded-lg">
-                <h3 className="font-semibold mb-2">Blog Features:</h3>
-                <ul className="text-sm text-muted-foreground space-y-1">
-                  <li>Write and edit posts</li>
-                  <li>Manage categories</li>
-                  <li>Schedule publications</li>
-                </ul>
-              </div>
-              <Button onClick={() => signOut()}>Sign In</Button>
-            </div>
+            <p className="text-xl text-gray-600">Welcome, {session.user?.name || session.user?.email}!</p>
+            <Button onClick={() => signOut()} className="bg-red-600 hover:bg-red-700">
+              Sign Out
+            </Button>
           </div>
         ) : (
           <div className="space-y-4">
-            <p className="text-muted-foreground">
-              Please sign in to write blog posts
-            </p>
-            <Button onClick={() => signIn()}>Sign In</Button>
+            <p className="text-xl text-gray-600">Please sign in to continue</p>
+            <Button onClick={() => signIn()} className="bg-blue-600 hover:bg-blue-700">
+              Sign In
+            </Button>
           </div>
         )}
       </div>
