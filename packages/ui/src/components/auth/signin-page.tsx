@@ -1,8 +1,8 @@
-// packages/ui/src/components/auth/signin-page.tsx - Complete with both email options
+// packages/ui/src/components/auth/signin-page.tsx - Fixed version
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { signIn, getProviders } from 'next-auth/react'
+import { signIn, getProviders, useSession } from 'next-auth/react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
@@ -29,6 +29,7 @@ interface SignInPageProps {
 
 export default function SignInPage({ providers, csrfToken, error }: SignInPageProps) {
   const router = useRouter()
+  const { data: session, status } = useSession() // FIX: Added useSession here
   const searchParams = useSearchParams()
   const [authProviders, setAuthProviders] = useState(providers)
   const [authMethod, setAuthMethod] = useState<'social' | 'email-link' | 'email-code' | 'phone'>('social')
@@ -42,6 +43,62 @@ export default function SignInPage({ providers, csrfToken, error }: SignInPagePr
 
   const callbackUrl = searchParams?.get('callbackUrl') || '/'
   const errorParam = searchParams?.get('error')
+
+  // SessionDebug component
+  const SessionDebug = () => {
+    if (process.env.NODE_ENV !== 'development') return null
+    
+    console.log("Session status:", status)
+    console.log("Session data:", session)
+    
+    if (status === "loading") {
+      return (
+        <div className="p-4 bg-yellow-100 border border-yellow-300 rounded mb-4">
+          <p>Loading session...</p>
+        </div>
+      )
+    }
+    
+    if (status === "unauthenticated") {
+      return (
+        <div className="p-4 bg-red-100 border border-red-300 rounded mb-4">
+          <p>❌ Not signed in</p>
+        </div>
+      )
+    }
+    
+    return (
+      <div className="p-4 bg-green-100 border border-green-300 rounded mb-4">
+        <h2 className="text-lg font-bold mb-2">
+          ✅ Signed in as {session?.user?.email || (session?.user as any)?.phone}
+        </h2>
+        <div className="space-y-1 text-sm">
+          <p><strong>User ID:</strong> {session?.user?.id}</p>
+          <p><strong>Name:</strong> {session?.user?.name}</p>
+          <p><strong>Email:</strong> {session?.user?.email}</p>
+          <p><strong>Provider:</strong> {(session as any)?.provider}</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Redirect if already signed in
+  useEffect(() => {
+    if (status === "authenticated") {
+      router.push("/")
+    }
+  }, [status, router])
+  
+  if (status === "authenticated") {
+    return (
+      <div className="container mx-auto p-8">
+        <div className="p-4 bg-green-100 border border-green-300 rounded">
+          <p>✅ Already signed in. Redirecting to home...</p>
+        </div>
+        <SessionDebug />
+      </div>
+    )
+  }
 
   useEffect(() => {
     if (!authProviders) {
@@ -158,6 +215,8 @@ export default function SignInPage({ providers, csrfToken, error }: SignInPagePr
           redirect: false
         })
         
+        console.log('Email code request result:', result)
+        
         if (result?.error) {
           setMessage('Failed to send verification code. Please try again.')
           setMessageType('error')
@@ -176,18 +235,20 @@ export default function SignInPage({ providers, csrfToken, error }: SignInPagePr
           redirect: false
         })
         
+        console.log('Email code verify result:', result)
+        
         if (result?.error) {
           setMessage(result.error === 'CredentialsSignin' 
             ? 'Invalid or expired verification code. Please try again.' 
             : 'Failed to verify code. Please try again.')
           setMessageType('error')
-        } else if (result?.url) {
-          router.push(result.url)
         } else if (result?.ok) {
-          router.push(callbackUrl)
+          // Force a session refresh and redirect
+          window.location.href = callbackUrl
         }
       }
     } catch (error) {
+      console.error('Email code auth error:', error)
       setMessage('Failed to process email authentication. Please try again.')
       setMessageType('error')
     }
@@ -234,10 +295,8 @@ export default function SignInPage({ providers, csrfToken, error }: SignInPagePr
             ? 'Invalid or expired verification code. Please try again.' 
             : 'Failed to verify code. Please try again.')
           setMessageType('error')
-        } else if (result?.url) {
-          router.push(result.url)
         } else if (result?.ok) {
-          router.push(callbackUrl)
+          window.location.href = callbackUrl
         }
       }
     } catch (error) {
@@ -284,6 +343,9 @@ export default function SignInPage({ providers, csrfToken, error }: SignInPagePr
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
+        {/* Add session debug info */}
+        {process.env.NODE_ENV === 'development' && <SessionDebug />}
+
         <Card className="shadow-xl border-0 bg-white/90 backdrop-blur-sm">
           <CardHeader className="space-y-1 text-center pb-8">
             <CardTitle className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">

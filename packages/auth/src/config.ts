@@ -121,7 +121,7 @@ async function createOrUpdateUser(email: string, phone?: string) {
     let user = await users.findOne(query)
     
     if (!user) {
-      // Create new user
+      // Create new user with NextAuth expected structure
       const newUser = {
         email: email || null,
         phone: phone || null,
@@ -137,24 +137,26 @@ async function createOrUpdateUser(email: string, phone?: string) {
       console.log(`[User] Created new user: ${email || phone}`)
     } else {
       // Update existing user
+      const updateData = { 
+        updatedAt: new Date(),
+        ...(email && { emailVerified: new Date() })
+      }
+      
       await users.updateOne(
         { _id: user._id },
-        { 
-          $set: { 
-            updatedAt: new Date(),
-            ...(email && { emailVerified: new Date() })
-          } 
-        }
+        { $set: updateData }
       )
       console.log(`[User] Updated existing user: ${email || phone}`)
     }
     
+    // Return user object in NextAuth expected format
     return {
       id: user._id.toString(),
       email: user.email,
       phone: user.phone,
       name: user.name,
       image: user.image,
+      emailVerified: user.emailVerified
     }
   } catch (error) {
     console.error('[User] Failed to create/update user:', error)
@@ -285,7 +287,16 @@ const providers = [
         action: { label: "Action", type: "text" },
       },
       async authorize(credentials) {
-        if (!credentials?.email) return null
+        console.log('[Email Code] Authorize called with:', {
+          email: credentials?.email,
+          action: credentials?.action,
+          hasCode: !!credentials?.code
+        })
+        
+        if (!credentials?.email) {
+          console.log('[Email Code] No email provided')
+          return null
+        }
         
         const email = credentials.email.toLowerCase()
         
@@ -325,21 +336,41 @@ const providers = [
               `,
             })
             
-            return { id: "code-sent", email, codeSent: true }
+            console.log('[Email Code] Email sent successfully')
+            // Return null for request action - this prevents automatic sign-in
+            return null
           } catch (error) {
             console.error("[Email Code] Failed to send email code:", error)
             throw new Error("Failed to send verification code")
           }
         } else if (credentials.action === "verify" && credentials.code) {
+          console.log(`[Email Code] Verifying code for: ${email}`)
+          
           const isValid = await verifyAndConsumeToken(email, credentials.code, 'email-code')
           
           if (!isValid) {
+            console.log(`[Email Code] Invalid or expired code for: ${email}`)
             throw new Error("Invalid or expired verification code")
           }
           
-          return await createOrUpdateUser(email)
+          console.log(`[Email Code] Code verified successfully for: ${email}`)
+          
+          // Get or create user in database
+          const userData = await createOrUpdateUser(email)
+          
+          console.log(`[Email Code] User data created/updated:`, userData)
+          
+          // Return user object that NextAuth expects
+          return {
+            id: userData.id,
+            email: userData.email,
+            name: userData.name,
+            image: userData.image,
+            emailVerified: new Date() // Important for NextAuth
+          }
         }
         
+        console.log('[Email Code] No valid action provided')
         return null
       },
     })
@@ -413,6 +444,15 @@ export const authOptions: NextAuthOptions = {
         token.accessToken = account.access_token
         token.provider = account.provider
         
+        // Store user info in JWT for credentials providers
+        if (account.provider === 'email-code' || account.provider === 'phone') {
+          token.id = user.id
+          token.email = user.email
+          token.name = user.name
+          token.picture = user.image
+          token.emailVerified = user.emailVerified
+        }
+        
         // Handle phone auth
         if (user.phone) {
           token.phone = user.phone
@@ -430,32 +470,54 @@ export const authOptions: NextAuthOptions = {
         }
       }
       
-      // For JWT sessions, use token
+      // For JWT sessions or credentials providers, use token
       if (token) {
+        // Ensure session has user ID
+        if (token.sub) {
+          session.user.id = token.sub
+        }
+        if (token.id) {
+          session.user.id = token.id as string
+        }
+        
+        // Add provider info
         if (token.provider) {
           session.provider = token.provider as string
         }
         
+        // Add phone if available
         if (token.phone) {
           session.user.phone = token.phone as string
         }
         
-        if (token.sub) {
-          session.user.id = token.sub
+        // Ensure email is set
+        if (token.email) {
+          session.user.email = token.email as string
+        }
+        
+        // Ensure name is set
+        if (token.name) {
+          session.user.name = token.name as string
         }
       }
       
       return session
     },
-
+  
     async signIn({ user, account, profile }) {
       console.log(`[NextAuth] signIn callback - User: ${user.email || user.phone}, Account: ${account?.provider}`)
+      
+      // For credentials providers, ensure we have a valid user
+      if (account?.provider === 'email-code' || account?.provider === 'phone') {
+        return !!(user && (user.email || user.phone))
+      }
+      
       return true
     },
   },
 
   session: {
-    strategy: "database",
+    strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60, // 30 days
     updateAge: 24 * 60 * 60, // 24 hours
   },

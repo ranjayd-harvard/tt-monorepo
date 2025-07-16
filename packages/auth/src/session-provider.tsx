@@ -7,10 +7,19 @@ import { ReactNode } from 'react'
 
 interface AuthSessionProviderProps {
   children: ReactNode
+  session?: any
 }
 
-export function AuthSessionProvider({ children }: AuthSessionProviderProps) {
-  return <SessionProvider>{children}</SessionProvider>
+export function AuthSessionProvider({ children, session }: AuthSessionProviderProps) {
+  return (
+    <SessionProvider 
+      session={session} 
+      refetchInterval={5 * 60}
+      refetchOnWindowFocus={true}
+    >
+      {children}
+    </SessionProvider>
+  )
 }
 
 // Enhanced hook for better TypeScript support
