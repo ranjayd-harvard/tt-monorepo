@@ -5,7 +5,8 @@
   "exports": {
     "./styles.css": "./src/styles.css",
     "./components": "./src/components/index.ts",
-    "./components/auth": "./src/components/auth/index.ts",
+    "./components/auth/signin-page": "./src/components/auth/signin-page.tsx",
+    "./components/auth/landing-page": "./src/components/auth/landing-page.tsx",
     "./lib": "./src/lib/index.ts"
   },
   "scripts": {

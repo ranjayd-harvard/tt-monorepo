@@ -1,2 +1,2 @@
-// Simple placeholder for auth components
-export const AuthPlaceholder = () => null;
+export * from './landing-page'
+export * from './signin-page'

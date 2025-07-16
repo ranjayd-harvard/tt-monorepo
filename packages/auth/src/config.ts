@@ -1,31 +1,174 @@
-// packages/auth/src/config.ts
+// packages/auth/src/config.ts - Completely fixed solution with custom email verification
 import type { NextAuthOptions } from "next-auth"
+import { MongoDBAdapter } from "@next-auth/mongodb-adapter"
+import { MongoClient } from "mongodb"
 import GoogleProvider from "next-auth/providers/google"
 import GitHubProvider from "next-auth/providers/github"
-import EmailProvider from "next-auth/providers/email"
 import CredentialsProvider from "next-auth/providers/credentials"
 import { Resend } from "resend"
 import twilio from "twilio"
+import crypto from "crypto"
 
-// Initialize Resend for email
-const resend = new Resend(process.env.RESEND_API_KEY!)
+// MongoDB client setup with proper error handling
+let client: MongoClient
+let clientPromise: Promise<MongoClient>
 
-// Initialize Twilio for phone
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID!,
-  process.env.TWILIO_AUTH_TOKEN!
-)
+if (!process.env.MONGODB_URI) {
+  throw new Error('Please add your MongoDB URI to .env.local')
+}
 
-// Store for phone verification codes (use Redis in production)
-const phoneVerificationStore = new Map<string, { code: string; expires: number }>()
+if (process.env.NODE_ENV === 'development') {
+  let globalWithMongo = global as typeof globalThis & {
+    _mongoClientPromise?: Promise<MongoClient>
+  }
 
-export const authOptions: NextAuthOptions = {
-  secret: process.env.NEXTAUTH_SECRET,
-  providers: [
-    // Social Providers
+  if (!globalWithMongo._mongoClientPromise) {
+    client = new MongoClient(process.env.MONGODB_URI)
+    globalWithMongo._mongoClientPromise = client.connect()
+  }
+  clientPromise = globalWithMongo._mongoClientPromise
+} else {
+  client = new MongoClient(process.env.MONGODB_URI)
+  clientPromise = client.connect()
+}
+
+// Initialize Resend for email (only if API key is provided)
+let resend: Resend | null = null
+if (process.env.RESEND_API_KEY) {
+  resend = new Resend(process.env.RESEND_API_KEY)
+}
+
+// Initialize Twilio for phone (only if credentials are provided)
+let twilioClient: any = null
+if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+  twilioClient = twilio(
+    process.env.TWILIO_ACCOUNT_SID,
+    process.env.TWILIO_AUTH_TOKEN
+  )
+}
+
+// MongoDB collection for ALL verification (email links + codes)
+async function getVerificationCollection() {
+  const client = await clientPromise
+  return client.db().collection("our_verification_tokens")
+}
+
+// Helper to store verification token/code in MongoDB
+async function storeVerification(identifier: string, token: string, type: 'email-link' | 'email-code' | 'phone', expiresIn: number = 10 * 60 * 1000) {
+  try {
+    const collection = await getVerificationCollection()
+    const expires = new Date(Date.now() + expiresIn)
+    
+    const verification = {
+      identifier,
+      token,
+      type,
+      expires,
+      createdAt: new Date()
+    }
+    
+    await collection.replaceOne(
+      { identifier, type },
+      verification,
+      { upsert: true }
+    )
+    
+    console.log(`[Verification] Stored ${type} token for: ${identifier}`)
+    return verification
+  } catch (error) {
+    console.error(`[Verification] Failed to store ${type} token:`, error)
+    throw error
+  }
+}
+
+// Helper to verify and consume token/code from MongoDB
+async function verifyAndConsumeToken(identifier: string, token: string, type: 'email-link' | 'email-code' | 'phone'): Promise<boolean> {
+  try {
+    const collection = await getVerificationCollection()
+    
+    const stored = await collection.findOne({ identifier, type })
+    
+    if (!stored || stored.expires < new Date()) {
+      if (stored) {
+        await collection.deleteOne({ _id: stored._id })
+      }
+      console.log(`[Verification] ${type} token expired or not found for: ${identifier}`)
+      return false
+    }
+    
+    if (stored.token !== token) {
+      console.log(`[Verification] Invalid ${type} token for: ${identifier}`)
+      return false
+    }
+    
+    // Clean up used token
+    await collection.deleteOne({ _id: stored._id })
+    console.log(`[Verification] ${type} token verified and consumed for: ${identifier}`)
+    return true
+  } catch (error) {
+    console.error(`[Verification] Failed to verify ${type} token:`, error)
+    return false
+  }
+}
+
+// Helper to create or update user in database
+async function createOrUpdateUser(email: string, phone?: string) {
+  try {
+    const client = await clientPromise
+    const users = client.db().collection("users")
+    
+    const query = email ? { email } : { phone }
+    let user = await users.findOne(query)
+    
+    if (!user) {
+      // Create new user
+      const newUser = {
+        email: email || null,
+        phone: phone || null,
+        name: email ? email.split('@')[0] : `User ${phone}`,
+        emailVerified: email ? new Date() : null,
+        image: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+      
+      const result = await users.insertOne(newUser)
+      user = { ...newUser, _id: result.insertedId }
+      console.log(`[User] Created new user: ${email || phone}`)
+    } else {
+      // Update existing user
+      await users.updateOne(
+        { _id: user._id },
+        { 
+          $set: { 
+            updatedAt: new Date(),
+            ...(email && { emailVerified: new Date() })
+          } 
+        }
+      )
+      console.log(`[User] Updated existing user: ${email || phone}`)
+    }
+    
+    return {
+      id: user._id.toString(),
+      email: user.email,
+      phone: user.phone,
+      name: user.name,
+      image: user.image,
+    }
+  } catch (error) {
+    console.error('[User] Failed to create/update user:', error)
+    throw error
+  }
+}
+
+// Create providers array based on available environment variables
+const providers = [
+  // Social Providers (only if credentials are provided)
+  ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET ? [
     GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       authorization: {
         params: {
           prompt: "consent",
@@ -33,126 +176,230 @@ export const authOptions: NextAuthOptions = {
           response_type: "code"
         }
       }
-    }),
+    })
+  ] : []),
+
+  ...(process.env.GITHUB_ID && process.env.GITHUB_SECRET ? [
     GitHubProvider({
-      clientId: process.env.GITHUB_ID!,
-      clientSecret: process.env.GITHUB_SECRET!,
-    }),
+      clientId: process.env.GITHUB_ID,
+      clientSecret: process.env.GITHUB_SECRET,
+    })
+  ] : []),
 
-    // Email Provider using Resend
-    EmailProvider({
-      server: {
-        host: "smtp.resend.com",
-        port: 587,
-        auth: {
-          user: "resend",
-          pass: process.env.RESEND_API_KEY!,
-        },
+  // Custom Email Magic Link Provider (replaces problematic NextAuth EmailProvider)
+  ...(resend ? [
+    CredentialsProvider({
+      id: "email-link",
+      name: "Email Link",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        token: { label: "Token", type: "text" },
+        action: { label: "Action", type: "text" },
       },
-      from: process.env.EMAIL_FROM || "noreply@yourdomain.com",
-      async sendVerificationRequest({ identifier: email, url, provider }) {
-        try {
-          await resend.emails.send({
-            from: provider.from as string,
-            to: email,
-            subject: "Sign in to Your App",
-            html: `
-              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-                <div style="text-align: center; margin-bottom: 40px;">
-                  <h1 style="color: #1f2937; margin: 0; font-size: 32px; font-weight: 700;">Welcome Back!</h1>
-                  <p style="color: #6b7280; margin: 10px 0 0 0; font-size: 16px;">Click the button below to sign in to your account</p>
+      async authorize(credentials) {
+        if (!credentials?.email) return null
+        
+        const email = credentials.email.toLowerCase()
+        
+        if (credentials.action === "request") {
+          try {
+            // Generate a secure random token
+            const token = crypto.randomBytes(32).toString('hex')
+            
+            // Store the token in our database
+            await storeVerification(email, token, 'email-link', 24 * 60 * 60 * 1000) // 24 hours
+            
+            // Create the verification URL
+            const baseUrl = process.env.NEXTAUTH_URL || 'http://localhost:3000'
+            const callbackUrl = credentials.callbackUrl || baseUrl
+            const verificationUrl = `${baseUrl}/api/auth/verify-email?token=${token}&email=${encodeURIComponent(email)}&callbackUrl=${encodeURIComponent(callbackUrl)}`
+            
+            console.log(`[Email Link] Sending magic link to: ${email}`)
+            console.log(`[Email Link] Token: ${token.substring(0, 10)}...`)
+            
+            await resend!.emails.send({
+              from: process.env.EMAIL_FROM || "noreply@yourdomain.com",
+              to: email,
+              subject: "Sign in to Your App",
+              html: `
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                  <div style="background: white; border-radius: 16px; padding: 40px; box-shadow: 0 20px 40px rgba(0,0,0,0.1);">
+                    <div style="text-align: center; margin-bottom: 30px;">
+                      <h1 style="color: #1f2937; margin: 0; font-size: 28px; font-weight: 700;">Welcome Back!</h1>
+                      <p style="color: #6b7280; margin: 10px 0 0 0; font-size: 16px;">Click the button below to sign in to your account</p>
+                    </div>
+                    
+                    <div style="text-align: center; margin: 30px 0;">
+                      <a href="${verificationUrl}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; padding: 16px 32px; border-radius: 12px; font-weight: 600; font-size: 16px; box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3); transition: transform 0.2s;">
+                        Sign In Securely
+                      </a>
+                    </div>
+                    
+                    <div style="background: #f9fafb; border-radius: 12px; padding: 20px; margin: 30px 0;">
+                      <h3 style="color: #374151; margin: 0 0 10px 0; font-size: 16px;">Security Notice</h3>
+                      <p style="color: #6b7280; margin: 0; font-size: 14px; line-height: 1.5;">
+                        This sign-in link will expire in 24 hours. If you didn't request this email, you can safely ignore it.
+                      </p>
+                    </div>
+                    
+                    <div style="text-align: center; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+                      <p style="color: #9ca3af; font-size: 12px; margin: 0;">
+                        This email was sent by Your App
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                
-                <div style="text-align: center; margin: 40px 0;">
-                  <a href="${url}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; padding: 16px 32px; border-radius: 12px; font-weight: 600; font-size: 16px; box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);">
-                    Sign In Securely
-                  </a>
-                </div>
-                
-                <div style="background: #f9fafb; border-radius: 12px; padding: 20px; margin: 40px 0;">
-                  <h3 style="color: #374151; margin: 0 0 10px 0; font-size: 18px;">Security Notice</h3>
-                  <p style="color: #6b7280; margin: 0; font-size: 14px; line-height: 1.5;">
-                    This sign-in link will expire in 24 hours. If you didn't request this email, you can safely ignore it.
-                  </p>
-                </div>
-                
-                <div style="text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
-                  <p style="color: #9ca3af; font-size: 12px; margin: 0;">
-                    This email was sent from Your App. If you have questions, please contact support.
-                  </p>
-                </div>
-              </div>
-            `,
-          })
-        } catch (error) {
-          console.error("Failed to send email:", error)
-          throw new Error("Failed to send verification email")
+              `,
+            })
+            
+            console.log(`[Email Link] Magic link sent successfully to: ${email}`)
+            return { id: "link-sent", email, linkSent: true }
+          } catch (error) {
+            console.error("[Email Link] Failed to send magic link:", error)
+            throw new Error("Failed to send verification email")
+          }
+        } else if (credentials.action === "verify" && credentials.token) {
+          // Verify the token
+          const isValid = await verifyAndConsumeToken(email, credentials.token, 'email-link')
+          
+          if (!isValid) {
+            throw new Error("Invalid or expired verification link")
+          }
+          
+          return await createOrUpdateUser(email)
         }
+        
+        return null
       },
-    }),
+    })
+  ] : []),
 
-    // Phone Provider using Credentials
+  // Email Code Authentication
+  ...(resend ? [
+    CredentialsProvider({
+      id: "email-code",
+      name: "Email Code",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        code: { label: "Code", type: "text" },
+        action: { label: "Action", type: "text" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email) return null
+        
+        const email = credentials.email.toLowerCase()
+        
+        if (credentials.action === "request") {
+          try {
+            const code = Math.floor(100000 + Math.random() * 900000).toString()
+            await storeVerification(email, code, 'email-code')
+            
+            console.log(`[Email Code] Sending email code to: ${email}`)
+            
+            await resend!.emails.send({
+              from: process.env.EMAIL_FROM || "noreply@yourdomain.com",
+              to: email,
+              subject: "Your Sign-in Code",
+              html: `
+                <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                  <div style="background: white; border-radius: 16px; padding: 40px; box-shadow: 0 20px 40px rgba(0,0,0,0.1);">
+                    <div style="text-align: center; margin-bottom: 30px;">
+                      <h1 style="color: #1f2937; margin: 0; font-size: 28px; font-weight: 700;">Your Sign-in Code</h1>
+                      <p style="color: #6b7280; margin: 10px 0 0 0; font-size: 16px;">Use this code to sign in to your account</p>
+                    </div>
+                    
+                    <div style="text-align: center; margin: 30px 0;">
+                      <div style="display: inline-block; background: #f3f4f6; padding: 20px 30px; border-radius: 12px; font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #1f2937;">
+                        ${code}
+                      </div>
+                    </div>
+                    
+                    <div style="background: #f9fafb; border-radius: 12px; padding: 20px; margin: 30px 0;">
+                      <h3 style="color: #374151; margin: 0 0 10px 0; font-size: 16px;">Security Notice</h3>
+                      <p style="color: #6b7280; margin: 0; font-size: 14px; line-height: 1.5;">
+                        This verification code will expire in 10 minutes. If you didn't request this code, you can safely ignore it.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              `,
+            })
+            
+            return { id: "code-sent", email, codeSent: true }
+          } catch (error) {
+            console.error("[Email Code] Failed to send email code:", error)
+            throw new Error("Failed to send verification code")
+          }
+        } else if (credentials.action === "verify" && credentials.code) {
+          const isValid = await verifyAndConsumeToken(email, credentials.code, 'email-code')
+          
+          if (!isValid) {
+            throw new Error("Invalid or expired verification code")
+          }
+          
+          return await createOrUpdateUser(email)
+        }
+        
+        return null
+      },
+    })
+  ] : []),
+
+  // Phone Authentication
+  ...(twilioClient ? [
     CredentialsProvider({
       id: "phone",
       name: "Phone",
       credentials: {
         phone: { label: "Phone", type: "text" },
-        code: { label: "Verification Code", type: "text" },
-        action: { label: "Action", type: "text" } // 'send' or 'verify'
+        code: { label: "Code", type: "text" },
+        action: { label: "Action", type: "text" },
       },
       async authorize(credentials) {
         if (!credentials?.phone) return null
-
-        const phone = credentials.phone.replace(/\D/g, '') // Remove non-digits
         
-        if (credentials.action === "send") {
-          // Generate and send verification code
-          const code = Math.floor(100000 + Math.random() * 900000).toString()
-          const expires = Date.now() + 10 * 60 * 1000 // 10 minutes
-          
-          phoneVerificationStore.set(phone, { code, expires })
-          
+        const phone = credentials.phone.replace(/\D/g, '')
+        
+        if (credentials.action === "request") {
           try {
+            const code = Math.floor(100000 + Math.random() * 900000).toString()
+            await storeVerification(`+${phone}`, code, 'phone')
+            
+            console.log(`[Phone] Sending SMS code to: +${phone}`)
+            
             await twilioClient.messages.create({
               body: `Your verification code is: ${code}. This code will expire in 10 minutes.`,
               from: process.env.TWILIO_PHONE_NUMBER!,
               to: `+${phone}`,
             })
             
-            // Return a special response indicating code was sent
-            return { id: "code-sent", phone, codeSent: true }
+            return { id: "code-sent", phone: `+${phone}`, codeSent: true }
           } catch (error) {
-            console.error("Failed to send SMS:", error)
+            console.error("[Phone] Failed to send SMS:", error)
             throw new Error("Failed to send verification code")
           }
         } else if (credentials.action === "verify" && credentials.code) {
-          // Verify the code
-          const stored = phoneVerificationStore.get(phone)
+          const isValid = await verifyAndConsumeToken(`+${phone}`, credentials.code, 'phone')
           
-          if (!stored || stored.expires < Date.now()) {
-            throw new Error("Verification code expired")
+          if (!isValid) {
+            throw new Error("Invalid or expired verification code")
           }
           
-          if (stored.code !== credentials.code) {
-            throw new Error("Invalid verification code")
-          }
-          
-          // Clean up the code
-          phoneVerificationStore.delete(phone)
-          
-          // Return user object
-          return {
-            id: `phone-${phone}`,
-            phone: `+${phone}`,
-            name: `User ${phone}`,
-            email: null,
-          }
+          return await createOrUpdateUser(undefined, `+${phone}`)
         }
         
         return null
       },
-    }),
-  ],
+    })
+  ] : [])
+]
+
+export const authOptions: NextAuthOptions = {
+  // MongoDB adapter for storing users, accounts, sessions
+  adapter: MongoDBAdapter(clientPromise),
+  secret: process.env.NEXTAUTH_SECRET,
+  
+  providers,
 
   pages: {
     signIn: "/auth/signin",
@@ -174,76 +421,109 @@ export const authOptions: NextAuthOptions = {
       return token
     },
     
-    async session({ session, token }) {
-      // Add provider info to session
-      if (token.provider) {
-        session.provider = token.provider as string
+    async session({ session, token, user }) {
+      // For database sessions, user object is available
+      if (user) {
+        session.user.id = user.id
+        if (user.phone) {
+          session.user.phone = user.phone
+        }
       }
       
-      // Add phone to session if available
-      if (token.phone) {
-        session.user.phone = token.phone as string
+      // For JWT sessions, use token
+      if (token) {
+        if (token.provider) {
+          session.provider = token.provider as string
+        }
+        
+        if (token.phone) {
+          session.user.phone = token.phone as string
+        }
+        
+        if (token.sub) {
+          session.user.id = token.sub
+        }
       }
       
       return session
     },
 
     async signIn({ user, account, profile }) {
-      // Allow all sign-ins
+      console.log(`[NextAuth] signIn callback - User: ${user.email || user.phone}, Account: ${account?.provider}`)
       return true
     },
   },
 
   session: {
-    strategy: "jwt",
+    strategy: "database",
     maxAge: 30 * 24 * 60 * 60, // 30 days
+    updateAge: 24 * 60 * 60, // 24 hours
   },
 
   events: {
-    async signIn({ user, account, profile }) {
-      console.log(`User signed in: ${user.email || user.phone} via ${account?.provider}`)
+    async signIn({ user, account, profile, isNewUser }) {
+      console.log(`[NextAuth] User signed in: ${user.email || user.phone} via ${account?.provider || 'credentials'}${isNewUser ? ' (new user)' : ''}`)
     },
     async signOut({ session }) {
-      console.log(`User signed out: ${session?.user?.email || session?.user?.phone}`)
+      console.log(`[NextAuth] User signed out: ${session?.user?.email || session?.user?.phone || 'unknown user'}`)
+    },
+    async createUser({ user }) {
+      console.log(`[NextAuth] New user created in database: ${user.email || user.phone}`)
     },
   },
+
+  debug: process.env.NODE_ENV === "development",
 }
 
-// Helper function to send phone verification (can be used in API routes)
-export async function sendPhoneVerification(phone: string): Promise<boolean> {
+// Helper functions for debugging and maintenance
+export async function testMongoConnection() {
   try {
-    const cleanPhone = phone.replace(/\D/g, '')
-    const code = Math.floor(100000 + Math.random() * 900000).toString()
-    const expires = Date.now() + 10 * 60 * 1000 // 10 minutes
-    
-    phoneVerificationStore.set(cleanPhone, { code, expires })
-    
-    await twilioClient.messages.create({
-      body: `Your verification code is: ${code}. This code will expire in 10 minutes.`,
-      from: process.env.TWILIO_PHONE_NUMBER!,
-      to: `+${cleanPhone}`,
-    })
-    
+    const client = await clientPromise
+    await client.db("admin").command({ ping: 1 })
+    console.log("✅ MongoDB connection successful")
     return true
   } catch (error) {
-    console.error("Failed to send SMS:", error)
+    console.error("❌ MongoDB connection failed:", error)
     return false
   }
 }
 
-// Helper function to verify phone code
-export function verifyPhoneCode(phone: string, code: string): boolean {
-  const cleanPhone = phone.replace(/\D/g, '')
-  const stored = phoneVerificationStore.get(cleanPhone)
-  
-  if (!stored || stored.expires < Date.now()) {
-    return false
+export async function debugVerificationTokens() {
+  try {
+    const client = await clientPromise
+    const ourTokens = await client.db().collection("our_verification_tokens").find({}).toArray()
+    
+    console.log("Our verification tokens:", ourTokens.length)
+    
+    return {
+      our_tokens: ourTokens.map(token => ({
+        identifier: token.identifier,
+        type: token.type,
+        token: token.token?.substring(0, 10) + '...', 
+        expires: token.expires,
+        created: token.createdAt
+      }))
+    }
+  } catch (error) {
+    console.error("Failed to get verification tokens:", error)
+    return { our_tokens: [] }
   }
-  
-  if (stored.code !== code) {
-    return false
+}
+
+export async function cleanupExpiredCodes() {
+  try {
+    const client = await clientPromise
+    const expired = await client.db().collection("our_verification_tokens").deleteMany({
+      expires: { $lt: new Date() }
+    })
+    
+    console.log(`Cleaned up ${expired.deletedCount} expired verification tokens`)
+    
+    return {
+      tokens_cleaned: expired.deletedCount
+    }
+  } catch (error) {
+    console.error("Failed to cleanup expired codes:", error)
+    return { tokens_cleaned: 0 }
   }
-  
-  phoneVerificationStore.delete(cleanPhone)
-  return true
 }
