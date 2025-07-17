@@ -338,7 +338,12 @@ const providers = [
             
             console.log('[Email Code] Email sent successfully')
             // Return null for request action - this prevents automatic sign-in
-            return null
+            return {
+              id: "code-sent",
+              email: email,
+              codeSent: true,
+              name: "Code Sent"
+            }
           } catch (error) {
             console.error("[Email Code] Failed to send email code:", error)
             throw new Error("Failed to send verification code")
@@ -393,30 +398,91 @@ const providers = [
         
         if (credentials.action === "request") {
           try {
-            const code = Math.floor(100000 + Math.random() * 900000).toString()
-            await storeVerification(`+${phone}`, code, 'phone')
+            console.log(`[Phone] Sending verification code to: +${phone}`)
             
-            console.log(`[Phone] Sending SMS code to: +${phone}`)
-            
-            await twilioClient.messages.create({
-              body: `Your verification code is: ${code}. This code will expire in 10 minutes.`,
-              from: process.env.TWILIO_PHONE_NUMBER!,
-              to: `+${phone}`,
-            })
-            
-            return { id: "code-sent", phone: `+${phone}`, codeSent: true }
+            // Use Twilio Verify Service (handles A2P compliance)
+            if (process.env.TWILIO_VERIFY_SERVICE_SID) {
+              const verification = await twilioClient.verify.v2
+                .services(process.env.TWILIO_VERIFY_SERVICE_SID)
+                .verifications
+                .create({
+                  to: `+${phone}`,
+                  channel: 'sms'
+                })
+              
+              console.log(`[Phone] Twilio Verify status: ${verification.status}`)
+              
+              return {
+                id: "code-sent",
+                phone: `+${phone}`,
+                codeSent: true,
+                name: "Code Sent"
+              }
+            } else {
+              // Fallback to direct SMS (with better error handling)
+              const code = Math.floor(100000 + Math.random() * 900000).toString()
+              await storeVerification(`+${phone}`, code, 'phone')
+              
+              await twilioClient.messages.create({
+                body: `Your verification code is: ${code}. This code will expire in 10 minutes.`,
+                from: process.env.TWILIO_PHONE_NUMBER!,
+                to: `+${phone}`,
+              })
+              
+              return {
+                id: "code-sent",
+                phone: `+${phone}`,
+                codeSent: true,
+                name: "Code Sent"
+              }
+            }
           } catch (error) {
             console.error("[Phone] Failed to send SMS:", error)
-            throw new Error("Failed to send verification code")
+            
+            // Check for specific Twilio errors
+            if (error.code === 30034) {
+              throw new Error("Phone number not registered for A2P messaging. Please contact support.")
+            } else if (error.code === 21211) {
+              throw new Error("Invalid phone number format. Please include country code.")
+            } else {
+              throw new Error("Failed to send verification code. Please try again.")
+            }
           }
         } else if (credentials.action === "verify" && credentials.code) {
-          const isValid = await verifyAndConsumeToken(`+${phone}`, credentials.code, 'phone')
-          
-          if (!isValid) {
+          try {
+            console.log(`[Phone] Verifying code for: +${phone}`)
+            
+            // Use Twilio Verify Service for verification
+            if (process.env.TWILIO_VERIFY_SERVICE_SID) {
+              const verificationCheck = await twilioClient.verify.v2
+                .services(process.env.TWILIO_VERIFY_SERVICE_SID)
+                .verificationChecks
+                .create({
+                  to: `+${phone}`,
+                  code: credentials.code
+                })
+              
+              console.log(`[Phone] Verification check status: ${verificationCheck.status}`)
+              
+              if (verificationCheck.status === 'approved') {
+                return await createOrUpdateUser(undefined, `+${phone}`)
+              } else {
+                throw new Error("Invalid or expired verification code")
+              }
+            } else {
+              // Fallback to custom verification
+              const isValid = await verifyAndConsumeToken(`+${phone}`, credentials.code, 'phone')
+              
+              if (!isValid) {
+                throw new Error("Invalid or expired verification code")
+              }
+              
+              return await createOrUpdateUser(undefined, `+${phone}`)
+            }
+          } catch (error) {
+            console.error("[Phone] Verification failed:", error)
             throw new Error("Invalid or expired verification code")
           }
-          
-          return await createOrUpdateUser(undefined, `+${phone}`)
         }
         
         return null

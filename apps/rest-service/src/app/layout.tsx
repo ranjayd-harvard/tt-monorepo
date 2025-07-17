@@ -1,9 +1,7 @@
-// apps/rest-service/src/app/layout.tsx
 import './globals.css'
 import { Inter } from 'next/font/google'
 import { AuthSessionProvider } from '@repo/auth/session-provider'
 import { ModernAppLayout } from '@repo/ui/components'
-import { Providers } from "./providers"
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -20,16 +18,16 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
+        {/* FIXED: SessionProvider must wrap the entire layout */}
+        <AuthSessionProvider>
           <ModernAppLayout 
             currentService="Rest Service"
-            headerTheme="gradient"  // Beautiful gradient header
+            headerTheme="gradient"
           >
-            <Providers>
-              {children}
-            </Providers>
+            {children}
           </ModernAppLayout>
+        </AuthSessionProvider>
       </body>
     </html>
   )
 }
-

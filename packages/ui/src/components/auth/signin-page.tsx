@@ -11,6 +11,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Separator } from '../ui/separator'
 import { Github, Mail, Phone, ArrowLeft, CheckCircle, AlertCircle, Link } from 'lucide-react'
 
+
+// Safe useSession hook that won't throw if no provider
+function useSafeSession() {
+  try {
+    // Dynamically import useSession to avoid build issues
+    const { useSession } = require('@repo/auth/session-provider')
+    return useSession()
+  } catch (error) {
+    console.log('No session provider available:', error)
+    return { data: null, status: 'unauthenticated' }
+  }
+}
+
 // Google icon component
 const GoogleIcon = () => (
   <svg viewBox="0 0 24 24" width="20" height="20">
@@ -29,7 +42,7 @@ interface SignInPageProps {
 
 export default function SignInPage({ providers, csrfToken, error }: SignInPageProps) {
   const router = useRouter()
-  const { data: session, status } = useSession() // FIX: Added useSession here
+  const { data: session, status } = useSafeSession() // FIX: Added useSession here
   const searchParams = useSearchParams()
   const [authProviders, setAuthProviders] = useState(providers)
   const [authMethod, setAuthMethod] = useState<'social' | 'email-link' | 'email-code' | 'phone'>('social')
